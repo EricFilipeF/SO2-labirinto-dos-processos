@@ -1,4 +1,4 @@
-# Labirinto dos Processos 
+# Labirinto dos Processos
 
 ## Componentes do grupo: ERIC FILIPE, JÉSSICA CAVALCANTE, JOÃO VITOR, JOSÉ VICTOR
 
@@ -31,14 +31,13 @@ if y == 11 and x >= 45 and estrelas_coletadas == TOTAL_ESTRELAS:
 
 Ou seja: só sai quem estiver na linha da saída, perto do lado direito, E já
 tiver coletado as 7 estrelas. Conferi contando os `*` no mapa e realmente
-são 7, batendo com `TOTAL_ESTRELAS = 7` - esse número está certo aqui
-(diferente de uma versão anterior que eu vi, onde esse total estava errado).
+são 7, batendo com `TOTAL_ESTRELAS = 7`.
 
 ### Pausar e matar processos com `Event`, não com sinais do SO
 
-Essa é a maior diferença em relação a outras versões que eu vi desse
-exercício: em vez de usar sinais reais do sistema operacional (`SIGSTOP`,
-`SIGTERM`), esse código usa dois `multiprocessing.Event` por processo:
+Essa é a maior diferença em relação a outras versões desse exercício: em
+vez de usar sinais reais do sistema operacional (`SIGSTOP`, `SIGTERM`),
+esse código usa dois `multiprocessing.Event` por processo:
 
 - `evento_pausa`: começa "setado" (`.set()`), ou seja, o processo roda
   normal. Pra pausar, o programa principal chama `.clear()`; o processo,
@@ -63,21 +62,25 @@ Windows, onde `SIGSTOP` nem existe).
   processo principal lê essa fila num laço e atualiza a tela.
 - **Event** (`evento_pausa`, `evento_morte`): usados pra pausar/retomar/
   matar, como explicado acima - dois eventos por processo.
-- **Lock** (`trava`): protege o trecho onde o processo conta que coletou
-  uma estrela nova. Vale notar: do jeito que está escrito, cada processo
-  guarda sua própria contagem (`estrelas_coletadas` e
-  `posicoes_visitadas` são variáveis locais da função, não compartilhadas
-  entre processos), então esse `with trava:` acaba não protegendo um
-  recurso que outro processo também escreve - hoje ele não muda o
-  resultado. Ele só faria diferença de verdade se `estrelas_coletadas`
-  fosse trocado por um contador **compartilhado** (tipo um
-  `multiprocessing.Value` ou um dict de `Manager`, como as estrelas
-  coletadas globalmente por todos juntos).
-- **Value compartilhado** (`velocidade_delay`, um `multiprocessing.Value`
-  do tipo `'d'`, double): guarda a velocidade de todos os processos num
-  único número compartilhado. Apertar `<` ou `>` muda esse valor, e como
-  todo processo lê o mesmo `velocidade_delay.value` no `time.sleep()`,
-  a velocidade de todo mundo muda junto, na hora.
+- **Value compartilhado - velocidade** (`velocidade_delay`, um
+  `multiprocessing.Value` do tipo `'d'`, double): guarda a velocidade de
+  todos os processos num único número compartilhado. Apertar `<` ou `>`
+  muda esse valor, e como todo processo lê o mesmo
+  `velocidade_delay.value` no `time.sleep()`, a velocidade de todo mundo
+  muda junto, na hora.
+- **Value compartilhado + Lock - contador global de estrelas**
+  (`total_estrelas_global`, um `multiprocessing.Value` do tipo `'i'`,
+  inteiro): diferente de `estrelas_coletadas` (que é local, cada processo
+  só sabe as suas próprias), esse contador soma as estrelas coletadas por
+  **todos os processos juntos**, e aparece no cabeçalho da tela
+  ("⭐ TOTAL GLOBAL: N"). Como mais de um processo pode incrementar esse
+  número ao mesmo tempo, e `valor += 1` não é uma operação atômica (por
+  baixo dos panos é ler o valor, somar 1, e gravar de volta - três passos
+  separados), dois processos poderiam ler o mesmo valor antes de qualquer
+  um gravar e um incremento se perder. É exatamente pra isso que existe o
+  `with trava:` ao redor do `total_estrelas_global.value += 1`: garante
+  que só um processo mexe nesse número por vez, e nenhum incremento se
+  perde mesmo com vários processos coletando estrelas ao mesmo tempo.
 
 ### Controles pelo teclado
 

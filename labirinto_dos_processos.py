@@ -27,7 +27,7 @@ CORES_PROCESSOS = [curses.COLOR_BLUE, curses.COLOR_GREEN, curses.COLOR_RED, curs
 TOTAL_ESTRELAS = 7 # Quantas estrelas precisa pegar para poder sair
 
 # --- O que cada processo filho faz rodando sozinho ---
-def explorar_labirinto(id_processo, fila_posicoes, mapa, evento_pausa, evento_morte, trava, velocidade_delay):
+def explorar_labirinto(id_processo, fila_posicoes, mapa, evento_pausa, evento_morte, trava, velocidade_delay, total_estrelas_global):
     pos_atual = (1, 0) # Todo processo começa na entrada do labirinto
     ultima_pos = None  
     direcoes = [(0, 1), (1, 0), (0, -1), (-1, 0)] # Cima, baixo, esquerda, direita
@@ -60,12 +60,16 @@ def explorar_labirinto(id_processo, fila_posicoes, mapa, evento_pausa, evento_mo
         
         # Se achou uma estrela e ainda não pegou ela
         if mapa[y][x] == '*' and pos_atual not in posicoes_visitadas:
-            with trava: # Trava pra dois processos não pegarem a mesma estrela no mesmo segundo
-                estrelas_coletadas += 1
-                posicoes_visitadas.add(pos_atual)
-                tarefas_pendentes = TOTAL_ESTRELAS - estrelas_coletadas
-                fila_posicoes.put((id_processo, pos_atual, f"⭐ CONCLUÍDA! (Tarefas pendentes: {tarefas_pendentes})"))
-                time.sleep(0.5) 
+            estrelas_coletadas += 1
+            posicoes_visitadas.add(pos_atual)
+            
+            # --- LOCK / REGIÃO CRÍTICA ---
+            with trava: # Trava para proteger o incremento da variável compartilhada global
+                total_estrelas_global.value += 1
+
+            tarefas_pendentes = TOTAL_ESTRELAS - estrelas_coletadas
+            fila_posicoes.put((id_processo, pos_atual, f"⭐ CONCLUÍDA! (Pendentes: {tarefas_pendentes})"))
+            time.sleep(0.5) 
         
         # Condição para vencer: chegar na saída (última linha) com todas as estrelas
         if y == 11 and x >= 45 and estrelas_coletadas == TOTAL_ESTRELAS:
@@ -127,6 +131,7 @@ def main(stdscr):
     fila_posicoes = multiprocessing.Queue() # Fila para os filhos mandarem mensagens pro pai
     trava = multiprocessing.Lock()          # Lock para sincronizar a coleta
     velocidade_delay = multiprocessing.Value('d', 0.25) # Velocidade compartilhada
+    total_estrelas_global = multiprocessing.Value('i', 0) # Variável compartilhada global
     
     processos = []
     eventos_pausa = []
@@ -134,9 +139,10 @@ def main(stdscr):
     posicoes_anteriores = {}
     processos_encerrados = set()
 
-    # Atualiza o texto da velocidade lá em cima do painel
+    # Atualiza o texto do cabeçalho do painel incluindo o TOTAL GLOBAL DE ESTRELAS
     def atualizar_cabecalho_status():
-        stdscr.addstr(painel_y, 0, f"STATUS DOS PROCESSOS - Velocidade: {velocidade_delay.value:.2f}s".ljust(60), curses.A_BOLD)
+        texto = f"STATUS DOS PROCESSOS - Velocidade: {velocidade_delay.value:.2f}s | ⭐ TOTAL GLOBAL: {total_estrelas_global.value}"
+        stdscr.addstr(painel_y, 0, texto.ljust(80), curses.A_BOLD)
 
     atualizar_cabecalho_status()
 
@@ -167,7 +173,7 @@ def main(stdscr):
         # Cria o processo de fato usando a biblioteca multiprocessing
         p = multiprocessing.Process(
             target=explorar_labirinto, 
-            args=(idx, fila_posicoes, MAPA_LABIRINTO, evt_pausa, evt_morte, trava, velocidade_delay)
+            args=(idx, fila_posicoes, MAPA_LABIRINTO, evt_pausa, evt_morte, trava, velocidade_delay, total_estrelas_global)
         )
         processos.append(p)
         p.start()
@@ -229,7 +235,11 @@ def main(stdscr):
         try:
             id_proc, pos_atual, acao = fila_posicoes.get(timeout=0.05)
         except multiprocessing.queues.Empty:
+            atualizar_cabecalho_status()
             continue
+            
+        # Atualiza a contagem exibida no cabeçalho toda vez que chegar algo na fila
+        atualizar_cabecalho_status()
             
         if id_proc in processos_encerrados:
             continue
